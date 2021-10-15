@@ -6,10 +6,18 @@ char route_bin_file[256];
 
 // Define the struct
 typedef struct CrmsFile {
-  int len;
-  char*** lines;  // This is an array of arrays of strings
+  char *file_name;
+  int id_process;
+  int file_size;
+  //file_addres sera igual al espacio fisico donde se guarda su info
+  int file_address;
+  //written bytes son los bytes escritos totales que se llevan
+  int written_bytes;
+  int read_bytes;
+
 } CrmsFile;
 
+CrmsFile* crms_file_init(int id_process, char *file_name);
 
 void cr_mount(char* memory_path);
 

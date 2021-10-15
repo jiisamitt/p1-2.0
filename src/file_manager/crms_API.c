@@ -14,8 +14,6 @@ void cr_mount(char* memory_path)
 {
     /* Funcion para montar la memoria. Establece como variable global
      la ruta local donde se encuentra el archivo .bin correspondiente a la memoria. */
-
-    
     if (getcwd(route_bin_file, sizeof(route_bin_file)))
     {
         strcat(route_bin_file, "/");
@@ -26,7 +24,6 @@ void cr_mount(char* memory_path)
     {
         printf("Error montando la memoria\n");
     }
-
 }
 
 void cr_ls_processes()
@@ -63,7 +60,7 @@ int cr_exists(int process_id, char* file_name)
     //Buscamos el proceso
     unsigned int buffer_estado = 0;
     unsigned int buffer_id = 0;
-    unsigned char* buffer_nombre_archivo[12];
+    unsigned char* buffer_nombre_archivo[13];
     FILE* file = fopen(route_bin_file, "rb");
     for (int i = 0; i < 16; i++)
     {
@@ -84,9 +81,9 @@ int cr_exists(int process_id, char* file_name)
                     if (buffer_validez == 1)
                     {
                         fseek(file, 256*i + 14 + 21*j + 1, SEEK_SET);
-                        fread(&buffer_nombre_archivo, sizeof(unsigned char), 12, file);
+                        fread(&buffer_nombre_archivo, sizeof(unsigned char), 13, file);
 
-                        if (memcmp(buffer_nombre_archivo, file_name, 12) == 0)
+                        if (memcmp(buffer_nombre_archivo, file_name, 13) == 0)
                         {
                             printf("Existe este archivo en este proceso\n");
                             fclose(file);
@@ -112,7 +109,8 @@ void cr_ls_files(int process_id)
     //Buscamos el proceso
     unsigned int buffer_estado = 0;
     unsigned int buffer_id = 0;
-    unsigned char* buffer_nombre_archivo[12];
+    unsigned char* buffer_nombre_archivo[13];
+    //buffer_nombre_archivo[13] = '\0';
     FILE* file = fopen(route_bin_file, "rb");
     for (int i = 0; i < 16; i++)
     {
@@ -133,18 +131,16 @@ void cr_ls_files(int process_id)
                     if (buffer_validez == 1)
                     {
                         fseek(file, 256*i + 14 + 21*j + 1, SEEK_SET);
-                        fread(&buffer_nombre_archivo, sizeof(unsigned char), 12, file);
+                        fread(&buffer_nombre_archivo, sizeof(unsigned char), 13, file);
                         char* S1 = (char*) (buffer_nombre_archivo);
+                        S1[13] = '\0';
                         printf("Nombre archivo: %s\n", S1);
                     }
-                    
-                }
-                 
+                }  
             }
         }  
     }
     fclose(file);
-
 }
 
 
@@ -153,6 +149,35 @@ void cr_start_process(int process_id, char* process_name)
 {
     /*Funcion que inicia un proceso con id process id y nombre process name. 
     Guarda toda la informacion correspondiente en una entrada en la tabla de PCBs.*/
+    unsigned int buffer_estado = 0;
+    unsigned int buffer_id = process_id;
+    FILE* file = fopen(route_bin_file, "rb+");
+    for (int i = 0; i < 16; i++)
+    {
+        fseek(file, 256*i, SEEK_SET);
+        fread(&buffer_estado, 1, 1, file);
+        if (buffer_estado == 0)
+        {
+            unsigned int nuevo_buffer_estado = 1;
+            fseek(file, 256*i, SEEK_SET);
+            fwrite(&nuevo_buffer_estado, 1, 1, file);
+            fseek(file, 256*i + 1, SEEK_SET);
+            fwrite(&buffer_id, 1, 1, file);
+            fseek(file, 256*i + 2, SEEK_SET);
+            char* buffer_nombre = calloc(1, 13);
+            strcpy(buffer_nombre, process_name);
+            for (int j = 0; j < 12; j++)
+                {
+                    fseek(file, 256*i + 2 + j, SEEK_SET);
+                    fwrite(&buffer_nombre[j], 1, 1, file);
+                }
+            //fwrite(&process_name, sizeof(unsigned char), 12, file);
+            free(buffer_nombre);
+
+            break;
+        } 
+    }
+    fclose(file);
 }
 
 void cr_finish_process(int process_id)
@@ -160,7 +185,30 @@ void cr_finish_process(int process_id)
     /*Funcion para terminar un proceso con id process id. Es importante que antes de que el proceso
      termine se debe liberar toda la memoria asignada a este y no debe tener entrada valida en 
      la tabla de PCBs. */
-
+    unsigned int buffer_estado = 0;
+    unsigned int buffer_id = 0;
+    unsigned int cero = 0;
+    FILE* file = fopen(route_bin_file, "rb+");
+    for (int i = 0; i < 16; i++)
+    {
+        fseek(file, 256*i, SEEK_SET);
+        fread(&buffer_estado, 1, 1, file);
+        if (buffer_estado == 1)
+        {
+            fseek(file, 256*i + 1, SEEK_SET);
+            fread(&buffer_id, 1, 1, file);
+            if (buffer_id == process_id)
+            {
+                for (int j = 0; j < 256; j++)
+                {
+                    fseek(file, 256*i + j, SEEK_SET);
+                    fwrite(&cero, 1, 1, file);
+                }
+                break;
+            } 
+        } 
+    }
+    fclose(file);
 }
 
 
@@ -170,8 +218,42 @@ CrmsFile* cr_open(int process_id, char* file_name, char mode)
     /*Funcion para abrir un archivo perteneciente a process id. Si mode es ‘r’, 
     busca el archivo con nombre file name y retorna un CrmsFile* que lo representa. 
     Si mode es ‘w’, se verifica que el archivo no exista y se retorna un nuevo CrmsFile* que lo representa. */
-    CrmsFile* file;
-    return file;
+    if (mode == 'r')
+    {
+        int result = cr_exists(process_id, file_name);
+        if(result == 1)
+        {
+            CrmsFile* file = crms_file_init(process_id, file_name);
+            //BORRAR CUANDO SE ARREGLE EL ERORR
+            printf("Test cr_open: %s %i\n", file->file_name, file->id_process);
+            return file;
+        }
+        else
+        {
+            printf("Error, no existe el archivo\n");
+            return NULL;
+        }
+
+    }
+    else if (mode == 'w')
+    {
+        if(cr_exists(process_id, file_name) == 0)
+        {
+            CrmsFile* file = crms_file_init(process_id, file_name);
+            return file;
+        }
+        else
+        {
+            printf("Error, existe el archivo\n");
+            return NULL;
+        }
+    }
+    else
+    {
+        printf("Mode incorrecto");
+        return NULL;
+    }
+    return NULL;
 }
 
 int cr_write_file(CrmsFile* file_desc, void* buffer, int n_bytes)
